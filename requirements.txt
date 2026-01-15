@@ -1,0 +1,5 @@
+torch>=2.0
+gym>=0.26
+numpy>=1.21
+matplotlib>=3.7
+tqdm>=4.65
