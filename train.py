@@ -1,22 +1,30 @@
 import gymnasium as gym
+import minigrid
+
 import torch
 from models import dqn, drqn, dtqn, adt_dqn
 from utils.replay_buffer import ReplayBuffer
 from utils.trainer import train_dqn, train_adt
-
+from utils.preprocess import preprocess_obs
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-WARMUP_EPISODES = 50
 
-env = gym.make("CartPole-v1")
-obs_dim = env.observation_space.shape[0]
-act_dim = env.action_space.n
+WARMUP_EPISODES = 0
 seq_len = 8
+
+# MiniGrid env
+env = gym.make("MiniGrid-MemoryS9-v0")
+
+act_dim = env.action_space.n
+obs_dim = 7 * 7 * 3 + 1  # image + direction
+
+
 def pad_sequence(seq, seq_len, obs_dim):
     if len(seq) < seq_len:
-        pad = [torch.zeros(obs_dim) for _ in range(seq_len - len(seq))]
+        pad = [torch.zeros(obs_dim, device=seq[0].device) for _ in range(seq_len - len(seq))]
         seq = pad + seq
     return seq
+
 
 def run(model, target, train_fn, episodes=200):
     model.to(device)
@@ -25,46 +33,62 @@ def run(model, target, train_fn, episodes=200):
     buffer = ReplayBuffer()
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    rewards, depths = [], []
+    rewards = []
+    depths = []        # depths from training updates
+    all_depths = []    # depths from action selection (analysis)
 
     for ep in range(episodes):
-        s, _ = env.reset()
-        hist = []
+        obs, _ = env.reset()
+        s = preprocess_obs(obs).to(device)
 
+        hist = []
+        episode_depths = []
         ep_r = 0
         done = False
 
+        # annealed tau (much more stable)
+        tau = max(0.3, 1.0 - ep / episodes)
+        prev_d = model.max_depth
         while not done:
-            hist.append(torch.tensor(s, dtype=torch.float))
+            hist.append(s)
             hist = hist[-seq_len:]
 
             hist_padded = pad_sequence(hist, seq_len, obs_dim)
-            x = torch.stack(hist_padded).unsqueeze(0)
-
+            x = torch.stack(hist_padded).unsqueeze(0).to(device)
 
             with torch.no_grad():
                 if train_fn == train_adt:
                     Qs, Ps = model(x)
-                    
-                    if ep <WARMUP_EPISODES:
-                        d = model.L_max
-                    else:
-                        d = model.adaptive_depth(Ps, tau=0.6)    
-                    a = Qs[d - 1].argmax().item()
-                else:
-                    a = model(x).argmax().item()
 
-            s2, r, terminated, truncated, _ = env.step(a)
+                    if ep < WARMUP_EPISODES:
+                        d = model.max_depth
+                    else:
+                        d_raw = model.adaptive_depth(Ps)
+                        d = int(0.7 * prev_d + 0.3 * d_raw)
+                        d = max(2, min(d, model.max_depth))
+                        prev_d = d
+
+                    a = Qs[d - 1].argmax(dim=-1).item()
+
+                    episode_depths.append(d)
+                    all_depths.append(d)
+                    
+
+                else:
+                    a = model(x).argmax(dim=-1).item()
+
+            obs2, r, terminated, truncated, _ = env.step(a)
             done = terminated or truncated
             ep_r += r
 
-            # build next history correctly
+            s2 = preprocess_obs(obs2).to(device)
+
             hist2 = hist.copy()
-            hist2.append(torch.tensor(s2, dtype=torch.float))
+            hist2.append(s2)
             hist2 = hist2[-seq_len:]
 
             hist2_padded = pad_sequence(hist2, seq_len, obs_dim)
-            x2 = torch.stack(hist2_padded)
+            x2 = torch.stack(hist2_padded).to(device)
 
             buffer.push(
                 x.squeeze(0),
@@ -79,19 +103,25 @@ def run(model, target, train_fn, episodes=200):
             if len(buffer) > 200:
                 out = train_fn(model, target, buffer, opt)
                 if train_fn == train_adt:
-                    _, d = out
-                    depths.append(d)
+                    _, d_used = out
+                    depths.append(d_used)
 
         rewards.append(ep_r)
         target.load_state_dict(model.state_dict())
 
-        print(
-            f"Episode {ep:03d} | "
-            f"Reward: {ep_r:4.0f} | "
-            f"Avg Depth: {sum(depths)/len(depths):.2f}" if depths else ""
-        )
+        if depths:
+            avg_depth = sum(depths) / len(depths)
+            print(
+                f"Episode {ep:03d} | "
+                f"Reward: {ep_r:4.0f} | "
+                f"Avg Depth (train): {avg_depth:.2f} | "
+                f"Avg Depth (ep): {sum(episode_depths)/len(episode_depths):.2f}"
+            )
+        else:
+            print(f"Episode {ep:03d} | Reward: {ep_r:4.0f}")
 
-    return rewards, depths
+    return rewards, depths, all_depths
+
 
 if __name__ == "__main__":
     from models.adt_dqn import ADTDQN
@@ -100,9 +130,11 @@ if __name__ == "__main__":
     target = ADTDQN(obs_dim, act_dim)
     target.load_state_dict(model.state_dict())
 
-    rewards, depths = run(model, target, train_adt)
+    rewards, depths, all_depths = run(model, target, train_adt)
 
-    print("Training finished")
+    print("\nTraining finished")
     print("Average reward:", sum(rewards) / len(rewards))
     if depths:
-        print("Average depth:", sum(depths) / len(depths))
+        print("Average depth (train):", sum(depths) / len(depths))
+    if all_depths:
+        print("Average depth (policy):", sum(all_depths) / len(all_depths))
