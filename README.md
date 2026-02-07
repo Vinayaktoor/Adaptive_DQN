@@ -9,7 +9,7 @@ Q-value uncertainty, achieving comparable performance to fixed-depth Transformer
 while significantly reducing average inference cost.
 
 📄 **Paper:** Adaptive Depth Transformer-DQN: Dynamic Computation for Value-Based Reinforcement Learning  
-🔗 **TechrXiv:**: doi.org/10.36227/techrxiv.176948800.00433159/v1 
+🔗 **TechrXiv:**  doi.org/10.36227/techrxiv.176948800.00433159/v1 
 💻 **Code:** This repository
 
 ---
