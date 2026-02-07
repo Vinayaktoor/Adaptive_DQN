@@ -115,10 +115,11 @@ All experiments use identical training budgets and hyperparameters
 📌 Citation
 
 If you use this code or build upon this work, please cite:
-@article{toor2026adtdqn,
+Code and Experiments are in **master** Branch!!
+@article{doi.org/10.36227/techrxiv.176948800.00433159/v1,
   title   = {Adaptive Depth Transformer-DQN: Dynamic Computation for Value-Based Reinforcement Learning},
   author  = {Toor, Vinayak},
-  journal = {arXiv preprint},
+  journal = {TechrXiv preprint},
   year    = {2026}
 }
 
