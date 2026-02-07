@@ -43,19 +43,13 @@ def train_adt(model, target, buffer, opt, gamma=0.99, lambda_comp=0.001):
         y = r + gamma * (1 - d) * q_next
 
     # Bellman loss across depths
-    loss = 0
+    loss = 0.0
     for l in range(model.max_depth):
         loss += F.mse_loss(Qs[l].gather(1, a), y)
 
-    loss += lambda_comp * depth
+    depth*=0.5 
+    loss += lambda_comp * float(depth)
 
-    loss = 0.0
-    for l in range(depth):
-        q_l = Qs[l].gather(1, a)
-        loss = loss + F.mse_loss(q_l, y)
-
-    # Computation regularizer (scalar)
-    loss = loss + lambda_comp * float(depth)
 
     opt.zero_grad()
     loss.backward()

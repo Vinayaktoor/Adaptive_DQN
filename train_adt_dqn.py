@@ -1,6 +1,6 @@
 import gymnasium as gym
 import minigrid
-
+import json
 import torch
 from models import dqn, drqn, dtqn, adt_dqn
 from utils.replay_buffer import ReplayBuffer
@@ -26,7 +26,14 @@ def pad_sequence(seq, seq_len, obs_dim):
     return seq
 
 
-def run(model, target, train_fn, episodes=200):
+def run(model, target, train_fn,SEED, episodes=300):
+    logs = {
+    "episode": [],
+    "reward": [],
+    "avg_depth_ep": [],
+    "success": []
+    }
+
     model.to(device)
     target.to(device)
 
@@ -38,7 +45,7 @@ def run(model, target, train_fn, episodes=200):
     all_depths = []    # depths from action selection (analysis)
 
     for ep in range(episodes):
-        obs, _ = env.reset()
+        obs, _ = env.reset(seed=SEED)
         s = preprocess_obs(obs).to(device)
 
         hist = []
@@ -104,8 +111,14 @@ def run(model, target, train_fn, episodes=200):
                 out = train_fn(model, target, buffer, opt)
                 if train_fn == train_adt:
                     _, d_used = out
+        
                     depths.append(d_used)
-
+        logs["episode"].append(ep)
+        logs["reward"].append(ep_r)
+        logs["avg_depth_ep"].append(sum(episode_depths) / len(episode_depths))
+        logs["success"].append(1 if ep_r > 0 else 0)
+    
+           
         rewards.append(ep_r)
         target.load_state_dict(model.state_dict())
 
@@ -119,18 +132,29 @@ def run(model, target, train_fn, episodes=200):
             )
         else:
             print(f"Episode {ep:03d} | Reward: {ep_r:4.0f}")
+   
+    with open("logs/adt_dqn_seed0.json", "w") as f:
+        json.dump(logs, f)
 
     return rewards, depths, all_depths
 
 
 if __name__ == "__main__":
     from models.adt_dqn import ADTDQN
+    import random
+    import numpy as np
+    import torch
+
+    SEED = 0
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
 
     model = ADTDQN(obs_dim, act_dim)
     target = ADTDQN(obs_dim, act_dim)
     target.load_state_dict(model.state_dict())
 
-    rewards, depths, all_depths = run(model, target, train_adt)
+    rewards, depths, all_depths = run(model, target, train_adt,SEED)
 
     print("\nTraining finished")
     print("Average reward:", sum(rewards) / len(rewards))

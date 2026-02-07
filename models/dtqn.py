@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class DTQN(nn.Module):
-    def __init__(self, obs_dim, action_dim, d_model=128, layers=4):
+    def __init__(self, obs_dim, action_dim, d_model=128, layers=6):
         super().__init__()
         self.embed = nn.Linear(obs_dim, d_model)
         encoder = nn.TransformerEncoderLayer(

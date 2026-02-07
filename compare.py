@@ -1,4 +1,4 @@
-from train import run
+from train_adt_dqn import run
 from models.dqn import DQN
 from models.drqn import DRQN
 from models.dtqn import DTQN
